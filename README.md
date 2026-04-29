@@ -15,10 +15,24 @@ The platform functions as a testbed for four core SRE pillars. We treat the appl
 
 | Pillar | Focus | Status |
 | :--- | :--- | :--- |
+| **0. Foundations** |	GitOps, CI/CD, Self-Hosted Runners | 🚧 In Progress |
 | **1. Observability** | Unified Telemetry via Grafana Alloy (OTel). | 🚧 In Progress |
 | **2. IaC** | Idempotent infrastructure automation with Ansible. | 🚧 In Progress |
 | **3. Kernel/Network** | TCP stack tuning and ephemeral port diagnostics. | 📋 Planning |
 | **4. Persistence** | Connection multiplexing with PgBouncer. | 📋 Planning |
+
+---
+
+## Infrastructure Operations & CI/CD
+We operate under a **GitOps** philosophy using **GitHub Actions** with **Self-Hosted Runners** to manage our hybrid cluster (K3s).
+
+### CI/CD Pipeline Strategy 🚧
+The project follows a **"Validate-First"** automation strategy:
+* **CI (Quality Gates):** * `Ansible-lint`: Validates infrastructure-as-code best practices.
+    * `Yamllint`: Ensures strict YAML syntax consistency.
+    * `Trivy`: Automated security scanning for vulnerabilities.
+* **CD (Deployment):** Automated via **GitHub Actions Self-Hosted Runners** located inside the private network. This ensures secure deployment without exposing the cluster to the public internet.
+* **Smoke Tests:** Post-deployment validation verifies service availability (`HTTP 200 OK`) before marking a build as successful.
 
 ---
 
@@ -89,9 +103,3 @@ We utilize MinIO as an AWS S3-compatible object storage solution, ensuring indep
 * **[Incident] K3s DNS Resolution Failure:** * *Root Cause:* CoreDNS misconfiguration in host-networking.
   * *Resolution:* Adjusted `ansible` template to ensure atomic updates.
   * [Full Post-Mortem](./docs/postmortems/incident-dns.md)
-
-Project Status
-
-    Active Sprint: [Insert Current Focus, e.g., "Ansible Role Hardening"]
-
-    Documentation: Check the /docs folder for detailed runbooks.
