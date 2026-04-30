@@ -1,8 +1,0 @@
-version: 0.1
-storage:
-  filesystem:
-    rootdirectory: /var/lib/registry   # Volumen persistente
-http:
-  addr: :5000
-  headers:
-    X-Content-Type-Options: [nosniff]

@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   backend:
-    image: pokedex-backend:1.6
+    image: diegorlopez/pokedex-backend:1.7.1-fd-fix
     container_name: pokedex-backend
     ports:
       - "8000:8000"
@@ -16,10 +16,10 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: pokedex-frontend:nginx  # ← Imagen con Nginx
+    image: diegorlopez/pokedex-frontend:nginx # ← Imagen con Nginx
     container_name: pokedex-frontend
     ports:
-      - "5500:80"  # ← Host:5500 → Container:80 (Nginx)
+      - "5500:80" # ← Host:5500 → Container:80 (Nginx)
     depends_on:
       - backend
     restart: unless-stopped
