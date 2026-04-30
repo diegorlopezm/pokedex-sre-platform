@@ -3,7 +3,7 @@
 # Pokedex SRE Platform
 
 A cloud-native infrastructure sandbox designed to demonstrate **Site Reliability Engineering (SRE)** principles. This platform implements a fully automated, observable, and resilient environment using **K3s** for orchestration and **GitHub Actions** for continuous delivery.
-
+> **Technical Vision:** This platform serves as a high-fidelity simulation of production-grade distributed systems, focusing on deep-storage reliability and automated incident response.
 > **Note:** The "Pokedex" application acts as the target workload to validate infrastructure health, CI/CD pipelines, and observability alerting.
 
 ---
@@ -15,14 +15,21 @@ The platform functions as a testbed for four core SRE pillars. We treat the appl
 
 | Pillar | Focus | Status |
 | :--- | :--- | :--- |
-| **0. Foundations** |	GitOps, CI/CD, Self-Hosted Runners | 🚧 In Progress |
-| **1. Observability** | Unified Telemetry via Grafana Alloy (OTel). | 🚧 In Progress |
-| **2. IaC** | Idempotent infrastructure automation with Ansible. | 🚧 In Progress |
-| **3. Kernel/Network** | TCP stack tuning and ephemeral port diagnostics. | 📋 Planning |
-| **4. Persistence** | Connection multiplexing with PgBouncer. | 📋 Planning |
+| **0. Foundations** | GitOps, CI/CD, Self-Hosted Runners | 🚧 In Progress |
+| **1. High-Density Storage** | **ZFS Native Encryption, Recordsize tuning (8k) & Data Integrity.** | 🚧 In Progress |
+| **2. Observability** | Unified Telemetry via Grafana Alloy (OTel). | 🚧 In Progress |
+| **3. IaC** | Idempotent infrastructure automation with Ansible. | 🚧 In Progress |
+| **4. Kernel/Network** | TCP stack tuning and ephemeral port diagnostics. | 📋 Planning |
+| **5. Persistence** | Connection multiplexing with PgBouncer. | 📋 Planning |
 
 ---
 
+## Design Philosophy: Enterprise-Grade Storage
+This platform implements advanced operational patterns for high-density data environments:
+
+* **Storage Engine (ZFS Integration):** Implementation of mirrored pools with a focus on data integrity. I apply **PostgreSQL-specific optimizations** (`recordsize=8k`) and customized **scrub scheduling** to balance data validation with I/O throughput, avoiding performance degradation during high-traffic windows.
+* **Scalable Encryption:** Architecture designed for native encryption at the dataset level. The design follows a decoupled key management strategy to handle large-scale disk fleets without operational overhead.
+---
 ## Infrastructure Operations & CI/CD
 We operate under a **GitOps** philosophy using **GitHub Actions** with **Self-Hosted Runners** to manage our hybrid cluster (K3s).
 
@@ -41,6 +48,10 @@ The project follows a **"Validate-First"** automation strategy:
 ```yaml
 orchestration:
   - K3s (Lightweight Kubernetes)
+
+storage_layer:
+  - ZFS (Optimized Data Pools)
+  - Features: Native Encryption, zstd Compression, 8k Recordsize
 
 automation:
   - Ansible (IaC)
@@ -100,6 +111,16 @@ We utilize MinIO as an AWS S3-compatible object storage solution, ensuring indep
 ## Operational Insights & Post-Mortem 🚧
 *We treat failures as telemetry data.*
 
-* **[Incident] K3s DNS Resolution Failure:** * *Root Cause:* CoreDNS misconfiguration in host-networking.
-  * *Resolution:* Adjusted `ansible` template to ensure atomic updates.
-  * [Full Post-Mortem](./docs/postmortems/incident-dns.md)
+[Incident Case Study] Silent Data Corruption Recovery:
+
+    Symptom: Checksum mismatch in database blocks.
+
+    Action: Block isolation via zdb and point-in-time recovery from object storage.
+
+    Full Report
+
+[Incident] K3s DNS Resolution Failure: * Root Cause: CoreDNS misconfiguration in host-networking.
+
+    Resolution: Adjusted ansible template to ensure atomic updates.
+
+    Full Post-Mortem
