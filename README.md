@@ -23,6 +23,56 @@ The platform functions as a testbed for four core SRE pillars. We treat the appl
 | **5. Persistence** | Connection multiplexing with PgBouncer. | 📋 Planning |
 
 ---
+```mermaid
+graph TD
+    %% 1. Definición de dirección y salto de línea
+    
+    subgraph "Management Workstation (My Fedora laptop)"
+        A[Terminal - VSCode] -- "vagrant up" --> B[Virtual Datacenter]
+        A -- "git push" --> C[GitHub Repository]
+    end
+
+    subgraph "Cloud (GitHub)"
+        C -- "Trigger Action" --> D{GitHub Actions}
+    end
+
+    subgraph "NAT (Vagrant/Libvirt)"
+        D -- "Dispatch Job" --> E[sre-runner]
+        E -- "Ansible Deploy" --> F[sre-storage]
+        E -- "Ansible Deploy" --> G[k3s-master]
+        E -- "Ansible Deploy" --> H[k3s-worker]
+        E -- "Ansible Deploy" --> I[sre-monitor]
+    end
+
+```
+---
+## Local Lab Setup 
+
+This project uses **Vagrant + Libvirt** to create a high-fidelity virtual environment.
+
+### Prerequisites / Requisitos
+- **Hypervisor:** Libvirt (KVM/QEMU) installed and running.
+- **Vagrant:** With the `vagrant-libvirt` plugin.
+- **SSH Key:** A dedicated key at ~/.ssh/id_rsa_ansible. Note: You don't need to create it manually; the Vagrantfile automatically detects if it's missing and generates it during the first vagrant up.
+
+### Spin up the environment
+```bash
+# Deployed from the infrastructure directory
+cd infrastructure/vagrant
+vagrant up
+```
+ ### Virtual Machine Inventory 
+| Node | IP (Static) | Role | Specs (vCPU/RAM) |
+| :--- | :--- | :--- | :--- |
+| **sre-runner** | `192.168.56.10` | GitHub Actions|GH Self-Hosted Runner | 1 vCPU / 2GiB |
+| **sre-monitor** | `192.168.56.11` | Observability Stack | 2 vCPU / 4GiB |
+| **sre-storage** | `192.168.56.12` | ZFS & MinIO Engine | 1 vCPU / 2GiB |
+| **k3s-master** | `192.168.56.20` | K3s Control Plane | 2 vCPU / 4GiB |
+| **k3s-worker** | `192.168.56.21` | K3s Worker Node | 2 vCPU / 4GiB |
+
+> [!INFO]- Network Isolation
+> This table defines static addressing within the `192.168.56.0/24` private network. It serves as the **Single Source of Truth** for the [[Ansible]] inventory and the [[Vagrantfile]] configuration.
+---
 
 ## Design Philosophy: Enterprise-Grade Storage
 This platform implements advanced operational patterns for high-density data environments:
