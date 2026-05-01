@@ -1,0 +1,56 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Configuración centralizada
+VIRTUAL_DATACENTER = {
+  "sre-runner"  => { ip: "192.168.56.10", cpu: 1, mem: 2048 },
+  "sre-monitor" => { ip: "192.168.56.11", cpu: 2, mem: 4096 },
+  "sre-storage" => { ip: "192.168.56.12", cpu: 1, mem: 2048, disks: 2 }, # Para ZFS
+  "k3s-master"  => { ip: "192.168.56.20", cpu: 2, mem: 4096 },
+  "k3s-worker"  => { ip: "192.168.56.21", cpu: 2, mem: 4096 }
+}
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "debian/bookworm64"
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+  VIRTUAL_DATACENTER.each do |name, spec|
+    config.vm.define name do |node|
+      node.vm.hostname = name
+      node.vm.network "private_network", ip: spec[:ip], libvirt__forward_mode: "nat"
+
+      node.vm.provider :libvirt do |lv|
+        lv.memory = spec[:mem]
+        lv.cpus   = spec[:cpu]
+        lv.machine_type = "q35"
+        lv.nic_model_type = "virtio"
+        
+        # Soporte para discos de almacenamiento extra
+        if spec[:disks]
+          (1..spec[:disks]).each do |i|
+            lv.storage :file, size: '10G', device: "vd#{('a'.ord + i).chr}"
+          end
+        end
+      end
+
+      # Lógica de Seguridad Senior: Auto-generación de llaves si no existen
+      ansible_key_path = File.expand_path("~/.ssh/id_rsa_ansible")
+      
+      # Si la llave privada no existe en el host, la creamos al vuelo
+      if !File.exist?(ansible_key_path)
+        puts "==> SRE Log: No se detectó llave para Ansible. Generando una nueva..."
+        system("ssh-keygen -t rsa -b 4096 -f #{ansible_key_path} -N ''")
+      end
+
+      ansible_pub_key = "#{ansible_key_path}.pub"
+
+      # Inyectamos la llave recién creada (o la existente)
+      node.vm.provision "shell", inline: <<-SHELL
+        mkdir -p /home/vagrant/.ssh
+        chmod 700 /home/vagrant/.ssh
+        echo "#{File.read(ansible_pub_key).strip}" >> /home/vagrant/.ssh/authorized_keys
+        chmod 600 /home/vagrant/.ssh/authorized_keys
+        chown -R vagrant:vagrant /home/vagrant/.ssh
+      SHELL
+    end
+  end
+end
