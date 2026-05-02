@@ -1,6 +1,7 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
+# Virtual Datacenter Topology Definition
 VIRTUAL_DATACENTER = {
   "sre-runner"  => { ip: "192.168.56.10", cpu: 1, mem: 2048 },
   "sre-monitor" => { ip: "192.168.56.11", cpu: 2, mem: 4096 },
@@ -9,19 +10,54 @@ VIRTUAL_DATACENTER = {
   "k3s-worker"  => { ip: "192.168.56.21", cpu: 2, mem: 4096 }
 }
 
+# --- 1. PRE-FLIGHT: SSH KEY MANAGEMENT ---
+# Define global path for the Ed25519 root of trust
+ansible_key_path = File.expand_path("~/.ssh/id_ed25519_ansible")
+
+if !File.exist?(ansible_key_path)
+  puts "==> SRE Log: No secure Ed25519 key detected. Generating..."
+  # High-entropy generation for secure non-interactive orchestration
+  system("ssh-keygen -t ed25519 -a 100 -f #{ansible_key_path} -N '' -q")
+  File.chmod(0600, ansible_key_path)
+end
+
+# --- 2. ANSIBLE GENERATION (Seeds) ---
+# Generate dynamic inventory based on topology definition
+inventory_content = "[all]\n"
+VIRTUAL_DATACENTER.each do |name, spec|
+  inventory_content += "#{name} ansible_host=#{spec[:ip]}\n"
+end
+
+inventory_content += "\n[all:vars]\n"
+inventory_content += "ansible_user=vagrant\n"
+inventory_content += "ansible_ssh_private_key_file=/home/vagrant/.ssh/id_ed25519_ansible\n"
+inventory_content += "ansible_ssh_common_args='-o StrictHostKeyChecking=no'\n"
+
+# Define default Ansible behavior for the Control Plane (Runner)
+ansible_cfg_content = <<-EOC
+[defaults]
+inventory = ./hosts.ini
+host_key_checking = False
+private_key_file = /home/vagrant/.ssh/id_ed25519_ansible
+interpreter_python = auto_silent
+EOC
+
 Vagrant.configure("2") do |config|
   config.vm.box = "debian/bookworm64"
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
-  # --- HOST AUTOMATION (TRIGGER) ---
+  # --- 3. SSH SECURITY CONFIGURATION ---
+  # Decouple Vagrant identity rotation to maintain Ansible compatibility
+  config.ssh.private_key_path = [ansible_key_path, "~/.vagrant.d/insecure_private_key"]
+  config.ssh.keys_only = true
+  config.ssh.insert_key = false 
+
+  # --- 4. NETWORK AUTOMATION (TRIGGERS) ---
+  # Ensure host-level routing and NAT for guest Internet access
   config.trigger.before :up do |trigger|
     trigger.info = "SRE Automation: Configuring Host Firewall..."
-    # Usamos bash -c con un string limpio para evitar que Vagrant parsee los '#'
     trigger.run = { inline: "bash -c '
-      # 1. Enable IP Forwarding
       sudo sysctl -w net.ipv4.ip_forward=1 > /dev/null
-
-      # 2. Firewalld/UFW detection
       if command -v firewall-cmd &> /dev/null; then
         sudo firewall-cmd --permanent --zone=public --add-masquerade > /dev/null
         sudo firewall-cmd --permanent --new-policy=vagrantToWorld &> /dev/null || true
@@ -32,20 +68,16 @@ Vagrant.configure("2") do |config|
       elif command -v ufw &> /dev/null; then
         sudo ufw route allow in on virbr+ > /dev/null
       fi
-
-      # 3. Iptables bypass
       sudo iptables -I FORWARD -s 192.168.121.0/24 -j ACCEPT 2>/dev/null || true
       sudo iptables -I FORWARD -d 192.168.121.0/24 -j ACCEPT 2>/dev/null || true
       sudo iptables -t nat -I POSTROUTING -s 192.168.121.0/24 ! -d 192.168.121.0/24 -j MASQUERADE 2>/dev/null || true
     '" }
   end
 
-  # --- HOST CLEANUP (TRIGGER) ---
   config.trigger.after :destroy do |trigger|
     trigger.info = "SRE Automation: Cleaning up Host network rules..."
     trigger.run = { inline: "bash -c '
       if [[ \"$(uname -s)\" == \"Linux\" ]]; then
-        # Remove bypass rules
         sudo iptables -D FORWARD -s 192.168.121.0/24 -j ACCEPT 2>/dev/null || true
         sudo iptables -D FORWARD -d 192.168.121.0/24 -j ACCEPT 2>/dev/null || true
         sudo iptables -t nat -D POSTROUTING -s 192.168.121.0/24 ! -d 192.168.121.0/24 -j MASQUERADE 2>/dev/null || true
@@ -53,6 +85,7 @@ Vagrant.configure("2") do |config|
     '" }
   end
 
+  # Node Provisioning Loop
   VIRTUAL_DATACENTER.each do |name, spec|
     config.vm.define name do |node|
       node.vm.hostname = name
@@ -68,6 +101,7 @@ Vagrant.configure("2") do |config|
         lv.machine_type = "q35"
         lv.nic_model_type = "virtio"
         
+        # Dynamic storage attachment for data-heavy nodes
         if spec[:disks]
           (1..spec[:disks]).each do |i|
             lv.storage :file, size: '10G', device: "vd#{('a'.ord + i).chr}"
@@ -75,22 +109,32 @@ Vagrant.configure("2") do |config|
         end
       end
 
-      # --- ANSIBLE KEY MANAGEMENT ---
-      ansible_key_path = File.expand_path("~/.ssh/id_ed25519_ansible")
-      if !File.exist?(ansible_key_path)
-        puts "==> SRE Log: No secure Ed25519 key detected. Generating..."
-        system("ssh-keygen -t ed25519 -a 100 -f #{ansible_key_path} -N '' -q")
-        File.chmod(0600, ansible_key_path)
-      end
-
-      # Inyección de la llave pública
+      # General Identity Injection (Public Key for all nodes)
       node.vm.provision "shell", inline: <<-SHELL
         mkdir -p /home/vagrant/.ssh
-        chmod 700 /home/vagrant/.ssh
         echo "#{File.read("#{ansible_key_path}.pub").strip}" >> /home/vagrant/.ssh/authorized_keys
-        chmod 600 /home/vagrant/.ssh/authorized_keys
+        chmod 700 /home/vagrant/.ssh && chmod 600 /home/vagrant/.ssh/authorized_keys
         chown -R vagrant:vagrant /home/vagrant/.ssh
       SHELL
+
+      # --- SRE RUNNER SPECIFIC BOOTSTRAP (Control Plane) ---
+      if name == "sre-runner"
+        node.vm.provision "shell", inline: <<-SHELL
+          echo "==> SRE Bootstrap: Installing Control Plane Tools..."
+          apt-get update && apt-get install -y ansible python3-pip git curl > /dev/null
+          
+          mkdir -p /home/vagrant/ansible
+          # Inject pre-generated Inventory and Ansible Configuration
+          echo -e "#{inventory_content}" > /home/vagrant/ansible/hosts.ini
+          echo -e "#{ansible_cfg_content}" > /home/vagrant/ansible/ansible.cfg
+          
+          # Inject Private Key for outbound orchestration identity
+          echo "#{File.read(ansible_key_path)}" > /home/vagrant/.ssh/id_ed25519_ansible
+          chmod 600 /home/vagrant/.ssh/id_ed25519_ansible
+          
+          chown -R vagrant:vagrant /home/vagrant/ansible /home/vagrant/.ssh/
+        SHELL
+      end
     end
   end
 end
