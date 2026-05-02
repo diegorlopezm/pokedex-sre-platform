@@ -1,11 +1,11 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
-# Configuración centralizada
+# Inventory definition for the Virtual Datacenter
 VIRTUAL_DATACENTER = {
   "sre-runner"  => { ip: "192.168.56.10", cpu: 1, mem: 2048 },
   "sre-monitor" => { ip: "192.168.56.11", cpu: 2, mem: 4096 },
-  "sre-storage" => { ip: "192.168.56.12", cpu: 1, mem: 2048, disks: 2 }, # Para ZFS
+  "sre-storage" => { ip: "192.168.56.12", cpu: 1, mem: 2048, disks: 2 }, # ZFS Lab Node
   "k3s-master"  => { ip: "192.168.56.20", cpu: 2, mem: 4096 },
   "k3s-worker"  => { ip: "192.168.56.21", cpu: 2, mem: 4096 }
 }
@@ -13,10 +13,65 @@ VIRTUAL_DATACENTER = {
 Vagrant.configure("2") do |config|
   config.vm.box = "debian/bookworm64"
   config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  # --- HOST AUTOMATION (TRIGGER) ---
+  # Runs once on the host before spinning up the virtual machines
+  config.trigger.before :up do |trigger|
+    trigger.info = "SRE Automation: Detecting environment and configuring Host Firewall..."
+    trigger.run = { inline: <<-SHELL
+      # 1. Ensure IP Forwarding is active (Universal Linux requirement)
+      sudo sysctl -w net.ipv4.ip_forward=1 > /dev/null
+
+      # 2. Firewall Engine Detection and Configuration
+      if command -v firewall-cmd &> /dev/null; then
+        echo "==> Host detected: RHEL/Fedora family (Firewalld)"
+        sudo firewall-cmd --permanent --zone=public --add-masquerade > /dev/null
+        
+        # Create policy to allow egress traffic from Libvirt to Internet
+        sudo firewall-cmd --permanent --new-policy=vagrantToWorld &> /dev/null || true
+        sudo firewall-cmd --permanent --policy=vagrantToWorld --add-ingress-zone=libvirt > /dev/null
+        sudo firewall-cmd --permanent --policy=vagrantToWorld --add-egress-zone=public > /dev/null
+        sudo firewall-cmd --permanent --policy=vagrantToWorld --set-target=ACCEPT > /dev/null
+        sudo firewall-cmd --reload > /dev/null
+      
+      elsif command -v ufw &> /dev/null; then
+        echo "==> Host detected: Debian/Ubuntu family (UFW)"
+        sudo ufw route allow in on virbr+ > /dev/null
+      fi
+
+      # 3. Iptables bypass for Docker/Kubernetes coexistence
+      # Targets the default Vagrant-Libvirt management network (192.168.121.0/24)
+      echo "==> SRE: Applying iptables bypass for Docker/K8s compatibility..."
+      sudo iptables -I FORWARD -s 192.168.121.0/24 -j ACCEPT 2>/dev/null || true
+      sudo iptables -I FORWARD -d 192.168.121.0/24 -j ACCEPT 2>/dev/null || true
+      sudo iptables -t nat -I POSTROUTING -s 192.168.121.0/24 ! -d 192.168.121.0/24 -j MASQUERADE 2>/dev/null || true
+    SHELL
+    }
+  end
+  # --- HOST CLEANUP (TRIGGER) ---
+  # Cleans up the iptables rules when the environment is destroyed
+  config.trigger.after :destroy do |trigger|
+    trigger.info = "SRE Automation: Cleaning up Host network rules..."
+    trigger.run = { inline: <<-SHELL
+      # Only attempt cleanup if on Linux
+      if [[ "$(uname -s)" == "Linux" ]]; then
+        echo "==> SRE: Removing iptables bypass rules..."
+        sudo iptables -D FORWARD -s 192.168.121.0/24 -j ACCEPT 2>/dev/null || true
+        sudo iptables -D FORWARD -d 192.168.121.0/24 -j ACCEPT 2>/dev/null || true
+        sudo iptables -t nat -D POSTROUTING -s 192.168.121.0/24 ! -d 192.168.121.0/24 -j MASQUERADE 2>/dev/null || true
+      fi
+    SHELL
+    }
+  end
+  # --- NODE DEFINITION ---
   VIRTUAL_DATACENTER.each do |name, spec|
     config.vm.define name do |node|
       node.vm.hostname = name
-      node.vm.network "private_network", ip: spec[:ip], libvirt__forward_mode: "nat"
+      node.vm.network "private_network", 
+        ip: spec[:ip], 
+        libvirt__network_name: "sre-lab-net",
+        libvirt__forward_mode: "none", 
+        libvirt__dhcp_enabled: false
 
       node.vm.provider :libvirt do |lv|
         lv.memory = spec[:mem]
@@ -24,7 +79,7 @@ Vagrant.configure("2") do |config|
         lv.machine_type = "q35"
         lv.nic_model_type = "virtio"
         
-        # Soporte para discos de almacenamiento extra
+        # Provision additional storage devices for ZFS pools
         if spec[:disks]
           (1..spec[:disks]).each do |i|
             lv.storage :file, size: '10G', device: "vd#{('a'.ord + i).chr}"
@@ -32,22 +87,19 @@ Vagrant.configure("2") do |config|
         end
       end
 
-      # Lógica de Seguridad Senior: Auto-generación de llaves si no existen
+      # --- ANSIBLE KEY MANAGEMENT ---
+      # Automatically ensures an SSH key exists for Ansible automation
       ansible_key_path = File.expand_path("~/.ssh/id_rsa_ansible")
-      
-      # Si la llave privada no existe en el host, la creamos al vuelo
       if !File.exist?(ansible_key_path)
-        puts "==> SRE Log: No se detectó llave para Ansible. Generando una nueva..."
+        puts "==> SRE Log: No Ansible key detected. Generating new RSA pair..."
         system("ssh-keygen -t rsa -b 4096 -f #{ansible_key_path} -N ''")
       end
 
-      ansible_pub_key = "#{ansible_key_path}.pub"
-
-      # Inyectamos la llave recién creada (o la existente)
+      # Inject public key into the guest authorized_keys
       node.vm.provision "shell", inline: <<-SHELL
         mkdir -p /home/vagrant/.ssh
         chmod 700 /home/vagrant/.ssh
-        echo "#{File.read(ansible_pub_key).strip}" >> /home/vagrant/.ssh/authorized_keys
+        echo "#{File.read("#{ansible_key_path}.pub").strip}" >> /home/vagrant/.ssh/authorized_keys
         chmod 600 /home/vagrant/.ssh/authorized_keys
         chown -R vagrant:vagrant /home/vagrant/.ssh
       SHELL
