@@ -50,10 +50,11 @@ graph TD
 
 This project uses **Vagrant + Libvirt** to create a high-fidelity virtual environment.
 
-### Prerequisites / Requisitos
+### Prerequisites
 - **Hypervisor:** Libvirt (KVM/QEMU) installed and running.
 - **Vagrant:** With the `vagrant-libvirt` plugin.
-- **SSH Key:** A dedicated key at ~/.ssh/id_rsa_ansible. Note: You don't need to create it manually; the Vagrantfile automatically detects if it's missing and generates it during the first vagrant up.
+- **Host Networking:** The `Vagrantfile` includes automated triggers to configure **IP Forwarding** and **Iptables bypass**. This ensures connectivity even if Docker or K3s are running on the host.
+- **SSH Key:** Automatically handled. The Vagrantfile generates `~/.ssh/id_rsa_ansible` if not found.
 
 ### Spin up the environment
 ```bash
@@ -160,7 +161,13 @@ We utilize MinIO as an AWS S3-compatible object storage solution, ensuring indep
 
 ## Operational Insights & Post-Mortem 🚧
 *We treat failures as telemetry data.*
+### [Incident] Network Isolation and Forwarding Failure
+- **Symptom:** 100% packet loss in VMs and Ansible provisioning timeout.
+- **Root Cause:** Conflict between `net.bridge.bridge-nf-call-iptables` and host-side Kubernetes rules.
+- **Resolution:** Implemented high-priority iptables bypass via Vagrant Triggers.
+- **[Full Post-Mortem Report](./docs/post-mortems/2026-04-21-network-isolation.md)**
 
+---
 [Incident Case Study] Silent Data Corruption Recovery:
 
     Symptom: Checksum mismatch in database blocks.
