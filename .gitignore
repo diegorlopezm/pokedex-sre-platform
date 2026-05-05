@@ -1,33 +1,24 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.env
-.venv/
-venv/
-
-
-# Vagrant local state / Estado local de Vagrant
-.vagrant/
-
-# Logs and temporary files / Logs y archivos temporales
-*.log
+# --- System & IDE ---
 .DS_Store
-
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# IDE
+Thumbs.db
 .vscode/
 .idea/
 
-# OS
-.DS_Store
-Thumbs.db
+# --- Secrets & Environment (CRITICAL) ---
+.env
+*.env
+.ssh/id_ed25519_ansible*
 
-#MinIO
+# --- Infrastructure & Vagrant ---
+.vagrant/
+*.log
+
+# --- Language Specifics ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+
+# --- Storage & Backups ---
 minio-s3/backups/
