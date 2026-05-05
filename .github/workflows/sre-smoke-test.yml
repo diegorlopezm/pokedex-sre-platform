@@ -1,0 +1,24 @@
+name: 🚀 SRE Smoke Test
+on: [push]
+
+jobs:
+  inventory-check:
+    # CRITICAL: Esto le dice a GitHub que NO use sus servidores, sino el TUYO
+    runs-on: self-hosted 
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: System Telemetry
+        run: |
+          echo "==> Diagnostic: Running on local SRE Infrastructure"
+          hostname
+          uptime
+          free -h
+          
+      - name: Ansible Connectivity Test
+        run: |
+          echo "==> Diagnostic: Checking Ansible Inventory"
+          cd infrastructure/vagrant
+          ansible all -i /home/vagrant/ansible/hosts.ini -m ping

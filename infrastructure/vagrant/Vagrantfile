@@ -1,7 +1,11 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
-# Virtual Datacenter Topology Definition
+# -------------------------------
+# 0. GLOBAL CONFIGURATION
+# -------------------------------
+
+# Virtual datacenter topology definition
 VIRTUAL_DATACENTER = {
   "sre-runner"  => { ip: "192.168.56.10", cpu: 1, mem: 2048 },
   "sre-monitor" => { ip: "192.168.56.11", cpu: 2, mem: 4096 },
@@ -10,98 +14,131 @@ VIRTUAL_DATACENTER = {
   "k3s-worker"  => { ip: "192.168.56.21", cpu: 2, mem: 4096 }
 }
 
-# --- 1. PRE-FLIGHT: SSH KEY MANAGEMENT ---
-# Define global path for the Ed25519 root of trust
-ansible_key_path = File.expand_path("~/.ssh/id_ed25519_ansible")
+# Detect current host user dynamically for reproducibility
+HOST_USER = ENV['USER'] || `whoami`.strip
 
-if !File.exist?(ansible_key_path)
-  puts "==> SRE Log: No secure Ed25519 key detected. Generating..."
-  # High-entropy generation for secure non-interactive orchestration
-  system("ssh-keygen -t ed25519 -a 100 -f #{ansible_key_path} -N '' -q")
-  File.chmod(0600, ansible_key_path)
+# -------------------------------
+# 1. ENV LOADER
+# -------------------------------
+
+# Load environment variables from .env file
+def load_env(file)
+  env_file = File.expand_path(file, __dir__)
+  return unless File.exist?(env_file)
+
+  File.readlines(env_file).each do |line|
+    next if line.strip.empty? || line.start_with?("#")
+    key, value = line.split('=', 2)
+    ENV[key.strip] = value.strip.gsub(/^['"]|['"]$/, '') if key && value
+  end
 end
 
-# --- 2. ANSIBLE GENERATION (Seeds) ---
-# Generate dynamic inventory based on topology definition
-inventory_content = "[all]\n"
+load_env(".env")
+
+# -------------------------------
+# 2. SUDOERS MANAGEMENT (SAFE + REVERSIBLE)
+# -------------------------------
+
+def manage_sudoers
+  sudo_file = "/etc/sudoers.d/vagrant-automation"
+  sudo_entry = "#{HOST_USER} ALL=(ALL) NOPASSWD:/usr/bin/sudo,/usr/sbin/sysctl,/usr/sbin/firewall-cmd,/usr/sbin/iptables"
+
+  if ARGV.include?('up')
+    unless system("sudo test -f #{sudo_file}")
+      puts "==> Adding temporary sudoers entry for #{HOST_USER}"
+      system("echo '#{sudo_entry}' | sudo tee #{sudo_file} > /dev/null")
+      system("sudo chmod 440 #{sudo_file}")
+    end
+  end
+
+  if ARGV.include?('destroy')
+    puts "==> Cleaning up sudoers entry"
+    system("sudo rm -f #{sudo_file}")
+  end
+end
+
+manage_sudoers
+
+# -------------------------------
+# 3. GITHUB CONFIG
+# -------------------------------
+
+GITHUB_PAT  = ENV['GITHUB_PAT'] || "MISSING_PAT"
+GITHUB_REPO = ENV['GITHUB_REPO_URL'] || "MISSING_REPO"
+REPO_PATH   = GITHUB_REPO.split('/').last(2).join('/')
+
+# -------------------------------
+# 4. SSH KEY MANAGEMENT
+# -------------------------------
+
+# Ensure Ansible SSH key exists
+ANSIBLE_KEY_PATH = File.expand_path("~/.ssh/id_ed25519_ansible")
+
+unless File.exist?(ANSIBLE_KEY_PATH)
+  puts "==> Generating Ansible SSH key"
+  system("ssh-keygen -t ed25519 -a 100 -f #{ANSIBLE_KEY_PATH} -N '' -q")
+  File.chmod(0600, ANSIBLE_KEY_PATH)
+end
+
+# -------------------------------
+# 5. ANSIBLE INVENTORY GENERATION
+# -------------------------------
+
+inventory = "[all]\n"
 VIRTUAL_DATACENTER.each do |name, spec|
-  inventory_content += "#{name} ansible_host=#{spec[:ip]}\n"
+  inventory += "#{name} ansible_host=#{spec[:ip]}\n"
 end
 
-inventory_content += "\n[all:vars]\n"
-inventory_content += "ansible_user=vagrant\n"
-inventory_content += "ansible_ssh_private_key_file=/home/vagrant/.ssh/id_ed25519_ansible\n"
-inventory_content += "ansible_ssh_common_args='-o StrictHostKeyChecking=no'\n"
+inventory += <<~EOF
 
-# Define default Ansible behavior for the Control Plane (Runner)
-ansible_cfg_content = <<-EOC
+[all:vars]
+ansible_user=vagrant
+ansible_ssh_private_key_file=/home/vagrant/.ssh/id_ed25519_ansible
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+EOF
+
+ansible_cfg = <<~EOF
 [defaults]
 inventory = ./hosts.ini
 host_key_checking = False
 private_key_file = /home/vagrant/.ssh/id_ed25519_ansible
 interpreter_python = auto_silent
-EOC
+EOF
+
+# -------------------------------
+# 6. VAGRANT CONFIGURATION
+# -------------------------------
 
 Vagrant.configure("2") do |config|
   config.vm.box = "debian/bookworm64"
+
+  # Disable synced folder for performance
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
-  # --- 3. SSH SECURITY CONFIGURATION ---
-  # Decouple Vagrant identity rotation to maintain Ansible compatibility
-  config.ssh.private_key_path = [ansible_key_path, "~/.vagrant.d/insecure_private_key"]
+  # SSH hardening
+  config.ssh.private_key_path = [ANSIBLE_KEY_PATH, "~/.vagrant.d/insecure_private_key"]
+  config.ssh.insert_key = false
   config.ssh.keys_only = true
-  config.ssh.insert_key = false 
 
-  # --- 4. NETWORK AUTOMATION (TRIGGERS) ---
-  # Ensure host-level routing and NAT for guest Internet access
-  config.trigger.before :up do |trigger|
-    trigger.info = "SRE Automation: Configuring Host Firewall..."
-    trigger.run = { inline: "bash -c '
-      sudo sysctl -w net.ipv4.ip_forward=1 > /dev/null
-      if command -v firewall-cmd &> /dev/null; then
-        sudo firewall-cmd --permanent --zone=public --add-masquerade > /dev/null
-        sudo firewall-cmd --permanent --new-policy=vagrantToWorld &> /dev/null || true
-        sudo firewall-cmd --permanent --policy=vagrantToWorld --add-ingress-zone=libvirt > /dev/null
-        sudo firewall-cmd --permanent --policy=vagrantToWorld --add-egress-zone=public > /dev/null
-        sudo firewall-cmd --permanent --policy=vagrantToWorld --set-target=ACCEPT > /dev/null
-        sudo firewall-cmd --reload > /dev/null
-      elif command -v ufw &> /dev/null; then
-        sudo ufw route allow in on virbr+ > /dev/null
-      fi
-      sudo iptables -I FORWARD -s 192.168.121.0/24 -j ACCEPT 2>/dev/null || true
-      sudo iptables -I FORWARD -d 192.168.121.0/24 -j ACCEPT 2>/dev/null || true
-      sudo iptables -t nat -I POSTROUTING -s 192.168.121.0/24 ! -d 192.168.121.0/24 -j MASQUERADE 2>/dev/null || true
-    '" }
-  end
-
-  config.trigger.after :destroy do |trigger|
-    trigger.info = "SRE Automation: Cleaning up Host network rules..."
-    trigger.run = { inline: "bash -c '
-      if [[ \"$(uname -s)\" == \"Linux\" ]]; then
-        sudo iptables -D FORWARD -s 192.168.121.0/24 -j ACCEPT 2>/dev/null || true
-        sudo iptables -D FORWARD -d 192.168.121.0/24 -j ACCEPT 2>/dev/null || true
-        sudo iptables -t nat -D POSTROUTING -s 192.168.121.0/24 ! -d 192.168.121.0/24 -j MASQUERADE 2>/dev/null || true
-      fi
-    '" }
-  end
-
-  # Node Provisioning Loop
   VIRTUAL_DATACENTER.each do |name, spec|
     config.vm.define name do |node|
       node.vm.hostname = name
-      node.vm.network "private_network", 
-        ip: spec[:ip], 
+
+      # Private network setup
+      node.vm.network "private_network",
+        ip: spec[:ip],
         libvirt__network_name: "sre-lab-net",
-        libvirt__forward_mode: "none", 
+        libvirt__forward_mode: "none",
         libvirt__dhcp_enabled: false
 
+      # Provider tuning
       node.vm.provider :libvirt do |lv|
         lv.memory = spec[:mem]
         lv.cpus   = spec[:cpu]
         lv.machine_type = "q35"
         lv.nic_model_type = "virtio"
-        
-        # Dynamic storage attachment for data-heavy nodes
+
+        # Optional additional disks
         if spec[:disks]
           (1..spec[:disks]).each do |i|
             lv.storage :file, size: '10G', device: "vd#{('a'.ord + i).chr}"
@@ -109,31 +146,102 @@ Vagrant.configure("2") do |config|
         end
       end
 
-      # General Identity Injection (Public Key for all nodes)
+      # Inject SSH key for Ansible access
       node.vm.provision "shell", inline: <<-SHELL
         mkdir -p /home/vagrant/.ssh
-        echo "#{File.read("#{ansible_key_path}.pub").strip}" >> /home/vagrant/.ssh/authorized_keys
-        chmod 700 /home/vagrant/.ssh && chmod 600 /home/vagrant/.ssh/authorized_keys
+        echo "#{File.read("#{ANSIBLE_KEY_PATH}.pub").strip}" >> /home/vagrant/.ssh/authorized_keys
+        chmod 700 /home/vagrant/.ssh
+        chmod 600 /home/vagrant/.ssh/authorized_keys
         chown -R vagrant:vagrant /home/vagrant/.ssh
       SHELL
 
-      # --- SRE RUNNER SPECIFIC BOOTSTRAP (Control Plane) ---
+      # -------------------------------
+      # RUNNER NODE SPECIALIZATION
+      # -------------------------------
       if name == "sre-runner"
-        node.vm.provision "shell", inline: <<-SHELL
-          echo "==> SRE Bootstrap: Installing Control Plane Tools..."
-          apt-get update && apt-get install -y ansible python3-pip git curl > /dev/null
-          
-          mkdir -p /home/vagrant/ansible
-          # Inject pre-generated Inventory and Ansible Configuration
-          echo -e "#{inventory_content}" > /home/vagrant/ansible/hosts.ini
-          echo -e "#{ansible_cfg_content}" > /home/vagrant/ansible/ansible.cfg
-          
-          # Inject Private Key for outbound orchestration identity
-          echo "#{File.read(ansible_key_path)}" > /home/vagrant/.ssh/id_ed25519_ansible
-          chmod 600 /home/vagrant/.ssh/id_ed25519_ansible
-          
-          chown -R vagrant:vagrant /home/vagrant/ansible /home/vagrant/.ssh/
-        SHELL
+
+        # Host-level networking setup (runs once)
+        node.trigger.before :up do |trigger|
+          trigger.info = "Configuring host networking..."
+          trigger.run = {
+            inline: <<-BASH
+              sudo sysctl -w net.ipv4.ip_forward=1 > /dev/null
+
+              if command -v firewall-cmd &> /dev/null; then
+                sudo firewall-cmd --permanent --zone=public --add-masquerade > /dev/null
+                sudo firewall-cmd --reload > /dev/null
+              elif command -v ufw &> /dev/null; then
+                sudo ufw route allow in on virbr+ > /dev/null
+              fi
+            BASH
+          }
+        end
+
+        # Runner + Ansible bootstrap
+        node.vm.provision "shell",
+          env: {
+            "GITHUB_PAT" => GITHUB_PAT,
+            "REPO_PATH"  => REPO_PATH,
+            "GITHUB_REPO" => GITHUB_REPO
+          },
+          inline: <<-SHELL
+            set -e
+
+            RUNNER_DIR="/home/vagrant/actions-runner"
+
+            # Install base dependencies
+            apt-get update -qq
+            apt-get install -y curl tar ansible > /dev/null
+
+            # Setup Ansible control plane
+            mkdir -p /home/vagrant/ansible
+
+            cat << 'EOF' > /home/vagrant/ansible/hosts.ini
+#{inventory}
+EOF
+
+            cat << 'EOF' > /home/vagrant/ansible/ansible.cfg
+#{ansible_cfg}
+EOF
+
+            echo "#{File.read(ANSIBLE_KEY_PATH)}" > /home/vagrant/.ssh/id_ed25519_ansible
+            chmod 600 /home/vagrant/.ssh/id_ed25519_ansible
+
+            chown -R vagrant:vagrant /home/vagrant/ansible /home/vagrant/.ssh/
+
+            # Register GitHub Runner (idempotent)
+            if [ "$GITHUB_PAT" != "MISSING_PAT" ] && [ ! -d "$RUNNER_DIR" ]; then
+              echo "Requesting GitHub runner token..."
+
+              TOKEN=$(curl -s -X POST \
+                -H "Authorization: token ${GITHUB_PAT}" \
+                -H "Accept: application/vnd.github.v3+json" \
+                https://api.github.com/repos/${REPO_PATH}/actions/runners/registration-token \
+                | grep -oP '"token": "\\K[^"]+')
+
+              if [ -z "$TOKEN" ]; then
+                echo "Failed to obtain runner token"
+                exit 1
+              fi
+
+              mkdir -p $RUNNER_DIR && cd $RUNNER_DIR
+
+              curl -s -L -o runner.tar.gz https://github.com/actions/runner/releases/download/v2.334.0/actions-runner-linux-x64-2.334.0.tar.gz
+              tar xzf runner.tar.gz
+
+              chown -R vagrant:vagrant $RUNNER_DIR
+
+              sudo -u vagrant ./config.sh \
+                --url "$GITHUB_REPO" \
+                --token "$TOKEN" \
+                --unattended \
+                --replace \
+                --name "sre-lab-runner"
+
+              ./svc.sh install
+              ./svc.sh start
+            fi
+          SHELL
       end
     end
   end
