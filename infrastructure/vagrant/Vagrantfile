@@ -209,6 +209,10 @@ EOF
 
             chown -R vagrant:vagrant /home/vagrant/ansible /home/vagrant/.ssh/
 
+            apt-get install -y curl tar ansible > /dev/null
+            
+            sudo -u vagrant ansible-galaxy collection install community.general
+
             # Register GitHub Runner (idempotent)
             if [ "$GITHUB_PAT" != "MISSING_PAT" ] && [ ! -d "$RUNNER_DIR" ]; then
               echo "Requesting GitHub runner token..."
