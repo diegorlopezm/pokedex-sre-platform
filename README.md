@@ -16,7 +16,7 @@ The platform functions as a testbed for four core SRE pillars. We treat the appl
 | Pillar | Focus | Status |
 | :--- | :--- | :--- |
 | **0. Foundations** | GitOps, CI/CD, Self-Hosted Runners | ✅ STABLE |
-| **1. High-Density Storage** | **ZFS Native Encryption, Recordsize tuning (8k) & Data Integrity.** | 🚧 In Progress |
+| **1. High-Density Storage** | **ZFS Mirroring, Recordsize tuning (8k) & CI/CD integration.** | ✅ STABLE |
 | **2. Observability** | Unified Telemetry via Grafana Alloy (OTel). | 🚧 In Progress |
 | **3. IaC** | Idempotent infrastructure automation with Ansible. | 🚧 In Progress |
 | **4. Kernel/Network** | TCP stack tuning and ephemeral port diagnostics. | 📋 Planning |
@@ -84,6 +84,9 @@ This platform implements advanced operational patterns for high-density data env
 
 * **Storage Engine (ZFS Integration):** Implementation of mirrored pools with a focus on data integrity. I apply **PostgreSQL-specific optimizations** (`recordsize=8k`) and customized **scrub scheduling** to balance data validation with I/O throughput, avoiding performance degradation during high-traffic windows.
 * **Scalable Encryption:** Architecture designed for native encryption at the dataset level. The design follows a decoupled key management strategy to handle large-scale disk fleets without operational overhead.
+> [!IMPORTANT]
+> **Current Optimization Debt:** > - **Provisioning Time:** ~7 min due to DKMS kernel module compilation during `apt install`. 
+> - **Future Mitigation:** Implement **Packer** for "Golden Image" baking and **APT-Cacher-NG** to reduce bandwidth and CPU overhead during node scale-up.
 ---
 ## Infrastructure Operations & CI/CD
 We operate under a **GitOps** philosophy using **GitHub Actions** with **Self-Hosted Runners** to manage our hybrid cluster (K3s).
@@ -154,7 +157,7 @@ We utilize MinIO as an AWS S3-compatible object storage solution, ensuring indep
 
 ## Operational Verification (Day-2 Operations) 🚧
 *How to validate the system status without a UI.*
-
+* **Verify Storage:** `vagrant ssh sre-storage -c "zfs list && zpool status"`
 * **Verify Infrastructure:** `kubectl get pods -n pokedex-namespace`
 * **Verify Telemetry:** [Link to Grafana Dashboard/Public view]
 * **Verify Data Integrity:** `psql -c "SELECT count(*) FROM pokemons;"`
