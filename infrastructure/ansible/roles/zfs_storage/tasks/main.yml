@@ -29,8 +29,8 @@
 - name: "6. Create ZFS Pool in Mirror mode"
   community.general.zpool:
     name: "{{ pool_name }}"
-    devices: "{{ disks }}"
-    layout: mirror
+    layout:
+      - mirror: "{{ disks }}"
     state: present
 
 - name: "7. Create PostgreSQL optimized Dataset (8k)"
