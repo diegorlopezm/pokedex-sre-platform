@@ -1,0 +1,6 @@
+---
+- name: "Configure SRE Storage Node"
+  hosts: sre-storage  
+  become: true
+  roles:
+    - zfs_storage

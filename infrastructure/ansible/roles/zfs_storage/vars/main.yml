@@ -1,0 +1,5 @@
+---
+pool_name: "zdata"
+disks:
+  - "/dev/vdb"
+  - "/dev/vdc"

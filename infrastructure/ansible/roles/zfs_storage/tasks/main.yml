@@ -1,0 +1,42 @@
+---
+- name: "1. Ensure contrib, non-free and firmware repositories"
+  apt_repository:
+    repo: "deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware"
+    state: present
+
+- name: "2. Update cache and perform dist-upgrade"
+  apt:
+    upgrade: dist
+    update_cache: yes
+
+- name: "3. Install ZFS utilities and Kernel Headers"
+  apt:
+    name:
+      - zfsutils-linux
+      - linux-headers-amd64
+    state: present
+
+- name: "4. Check if reboot is required"
+  stat:
+    path: /var/run/reboot-required
+  register: reboot_required_file
+
+- name: "5. Reboot if Kernel has changed"
+  reboot:
+    msg: "SRE Alert: Rebooting to apply new Kernel"
+  when: reboot_required_file.stat.exists
+
+- name: "6. Create ZFS Pool in Mirror mode"
+  community.general.zpool:
+    name: "{{ pool_name }}"
+    devices: "{{ disks }}"
+    layout: mirror
+    state: present
+
+- name: "7. Create PostgreSQL optimized Dataset (8k)"
+  community.general.zfs:
+    name: "{{ pool_name }}/postgres"
+    state: present
+    extra_zfs_properties:
+      recordsize: 8k
+      compression: lz4
