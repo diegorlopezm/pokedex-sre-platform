@@ -30,7 +30,8 @@
   community.general.zpool:
     name: "{{ pool_name }}"
     layout:
-      - mirror: "{{ disks }}"
+      - type: mirror
+        vdevs: "{{ disks }}"
     state: present
 
 - name: "7. Create PostgreSQL optimized Dataset (8k)"
