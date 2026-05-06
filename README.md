@@ -15,7 +15,7 @@ The platform functions as a testbed for four core SRE pillars. We treat the appl
 
 | Pillar | Focus | Status |
 | :--- | :--- | :--- |
-| **0. Foundations** | GitOps, CI/CD, Self-Hosted Runners | 🚧 In Progress |
+| **0. Foundations** | GitOps, CI/CD, Self-Hosted Runners | ✅ STABLE |
 | **1. High-Density Storage** | **ZFS Native Encryption, Recordsize tuning (8k) & Data Integrity.** | 🚧 In Progress |
 | **2. Observability** | Unified Telemetry via Grafana Alloy (OTel). | 🚧 In Progress |
 | **3. IaC** | Idempotent infrastructure automation with Ansible. | 🚧 In Progress |
@@ -74,8 +74,12 @@ vagrant up
 > [!INFO]- Network Isolation
 > This table defines static addressing within the `192.168.56.0/24` private network. It serves as the **Single Source of Truth** for the [[Ansible]] inventory and the [[Vagrantfile]] configuration.
 ---
+## Identity & Security: 
+>The entire fleet utilizes a high-entropy Ed25519 mesh. The sre-runner acts as the SSoT (Single Source of Truth) for configuration, ensuring zero manual drift.
+---
 
 ## Design Philosophy: Enterprise-Grade Storage
+
 This platform implements advanced operational patterns for high-density data environments:
 
 * **Storage Engine (ZFS Integration):** Implementation of mirrored pools with a focus on data integrity. I apply **PostgreSQL-specific optimizations** (`recordsize=8k`) and customized **scrub scheduling** to balance data validation with I/O throughput, avoiding performance degradation during high-traffic windows.
