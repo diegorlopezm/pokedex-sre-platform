@@ -30,7 +30,8 @@
 
     - name: Add Trivy repository with signed-by
       apt_repository:
-        repo: "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" # noqa 204
+        # yamllint disable-line rule:line-length
+        repo: "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main"
         filename: trivy
         state: present
 
