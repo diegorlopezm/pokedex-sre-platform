@@ -112,7 +112,7 @@ EOF
 Vagrant.configure("2") do |config|
   config.vm.box = "debian/bookworm64"
 
-  # Disable synced folder for performance
+  # Disable global synced folder for performance
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
   # SSH hardening
@@ -159,6 +159,11 @@ Vagrant.configure("2") do |config|
       # RUNNER NODE SPECIALIZATION
       # -------------------------------
       if name == "sre-runner"
+        
+        # SRE PORTABILITY: Mount Ansible code folder using rsync for fast provisioning
+        # Mounts 'infrastructure/ansible' from host to '/home/vagrant/ansible-code' in guest
+        ANSIBLE_PATH = File.expand_path("../ansible", __dir__)
+        node.vm.synced_folder ANSIBLE_PATH, "/home/vagrant/ansible-code", type: "rsync"
 
         # Host-level networking setup (runs once)
         node.trigger.before :up do |trigger|
@@ -246,6 +251,28 @@ EOF
               ./svc.sh start
             fi
           SHELL
+
+        # SELF-PROVISIONING: Run Ansible locally inside the VM to avoid host-side dependencies
+        node.vm.provision "shell", inline: <<-BASH
+          set -e
+          echo "==> SRE Self-Provisioning: Running Ansible inside the runner..."
+          
+          # Use the configuration generated during bootstrap
+          export ANSIBLE_CONFIG=/home/vagrant/ansible/ansible.cfg
+          
+          # Execute the playbook using the mounted code folder
+          sudo -u vagrant ansible-playbook -i /home/vagrant/ansible/hosts.ini \
+                           /home/vagrant/ansible-code/site.yml \
+                           --limit sre-runner --become
+          
+          echo "==> Refreshing Runner Service to reload Environment Variables and PATH..."
+          # Dynamically find and restart the GitHub runner service
+          SERVICE_NAME=$(systemctl list-unit-files | grep actions.runner | awk '{print $1}')
+          if [ ! -z "$SERVICE_NAME" ]; then
+            sudo systemctl restart "$SERVICE_NAME"
+            echo "Service $SERVICE_NAME successfully restarted."
+          fi
+        BASH
       end
     end
   end
