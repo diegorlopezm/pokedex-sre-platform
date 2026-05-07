@@ -1,10 +1,12 @@
 ---
 name: "SRE Platform Pipeline"
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
-    branches: [ main, 'feature/**' ]
+    branches: [main, 'feature/**']
     paths:
       - 'infrastructure/**'
       - '.github/workflows/pipeline.yml'

@@ -1,0 +1,24 @@
+---
+extends: default
+
+rules:
+  # Maintain clean structure while allowing long URLs and paths
+  line-length:
+    max: 120
+    allow-non-breakable-words: true
+    allow-non-breakable-inline-mappings: true
+
+  # Enforce strict indentation to prevent syntax errors
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+
+  # Disabled to avoid conflicts with VSCode's auto-trimming
+  trailing-spaces: disable
+
+  # Allow consistent use of both boolean and string-based truthy values
+  truthy:
+    allowed-values: ['true', 'false', 'yes', 'no']
+
+  # Enforce YAML document start marker (---) for consistency
+  document-start: enable
