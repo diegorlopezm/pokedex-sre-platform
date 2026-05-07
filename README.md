@@ -91,12 +91,12 @@ This platform implements advanced operational patterns for high-density data env
 ## Infrastructure Operations & CI/CD
 We operate under a **GitOps** philosophy using **GitHub Actions** with **Self-Hosted Runners** to manage our hybrid cluster (K3s).
 
-### CI/CD Pipeline Strategy 🚧
-The project follows a **"Validate-First"** automation strategy:
+### CI/CD Pipeline Strategy ✅
+The platform implements a **"Validate-First"** automation strategy:
 * **CI (Quality Gates):** * `Ansible-lint`: Validates infrastructure-as-code best practices.
     * `Yamllint`: Ensures strict YAML syntax consistency.
     * `Trivy`: Automated security scanning for vulnerabilities.
-* **CD (Deployment):** Automated via **GitHub Actions Self-Hosted Runners** located inside the private network. This ensures secure deployment without exposing the cluster to the public internet.
+* **CD (Deployment):** Automated via **GitHub Actions Self-Hosted Runners** located inside the private network. This ensures secure deployment without exposing the cluster to the public internet. We use a Self-Provisioning pattern where the sre-runner synchronizes code via rsync and configures the fleet internally.
 * **Smoke Tests:** Post-deployment validation verifies service availability (`HTTP 200 OK`) before marking a build as successful.
 
 ---
@@ -173,6 +173,12 @@ We have replaced MinIO with **RustFS** to handle our S3-compatible object storag
 - **Root Cause:** Conflict between `net.bridge.bridge-nf-call-iptables` and host-side Kubernetes rules.
 - **Resolution:** Implemented high-priority iptables bypass via Vagrant Triggers.
 - **[Full Post-Mortem Report](./docs/post-mortems/2026-04-21-network-isolation.md)**
+
+### [Incident] GitHub Runner Path Isolation (Exit Code 127)
+- **Symptom:** Quality Gate jobs failing despite successful infrastructure provisioning.
+- **Root Cause:** Environment PATH mismatch and process-level stale environment.
+- **Resolution:** Implemented internal Self-Provisioning and dynamic service restarts.
+- **[Full Post-Mortem Report](./docs/post-mortems/2026-05-07-runner-path-isolation.md)**
 
 ---
 [Incident Case Study] Silent Data Corruption Recovery:
