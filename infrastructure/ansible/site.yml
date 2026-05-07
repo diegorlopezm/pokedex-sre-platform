@@ -6,8 +6,7 @@
     - github_runner
 
 - name: "Configure SRE Storage Node"
-  hosts: sre-storage  
+  hosts: sre-storage
   become: true
   roles:
     - zfs_storage
-

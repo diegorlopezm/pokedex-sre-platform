@@ -7,7 +7,7 @@
       - gnupg
       - wget
     state: present
-    update_cache: yes
+    update_cache: true
 
 - name: Security Scanner (Trivy) Installation
   block:
@@ -30,7 +30,7 @@
 
     - name: Add Trivy repository with signed-by
       apt_repository:
-        repo: "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main"
+        repo: "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" # noqa 204
         filename: trivy
         state: present
 
@@ -38,4 +38,4 @@
       apt:
         name: trivy
         state: present
-        update_cache: yes
+        update_cache: true
