@@ -9,7 +9,11 @@ on:
     branches: [main, 'feature/**']
     paths:
       - 'infrastructure/**'
+      - 'src/**'
+      - 'docker-compose.yml'
       - '.github/workflows/pipeline.yml'
+      - '.yamllint'
+      - '.ansible-lint'
   # Allows manual execution from GitHub UI
   workflow_dispatch:
 
