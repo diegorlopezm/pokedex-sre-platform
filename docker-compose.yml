@@ -3,7 +3,7 @@ version: '3.8'
 
 services:
   backend:
-    image: diegorlopez/pokedex-backend:1.7.1-fd-fix
+    image: diegorlopez/pokedex-backend:1.8.0
     container_name: pokedex-backend
     ports:
       - "8000:8000"
