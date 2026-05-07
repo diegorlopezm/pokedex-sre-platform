@@ -1,6 +1,6 @@
 ---
 - name: Install Linting tools and dependencies
-  apt:
+  ansible.builtin.apt:
     name:
       - yamllint
       - ansible-lint
@@ -12,31 +12,31 @@
 - name: Security Scanner (Trivy) Installation
   block:
     - name: Ensure keyrings directory exists
-      file:
+      ansible.builtin.file:
         path: /usr/share/keyrings
         state: directory
         mode: '0755'
 
     - name: Download Trivy GPG key
-      get_url:
+      ansible.builtin.get_url:
         url: https://aquasecurity.github.io/trivy-repo/deb/public.key
         dest: /tmp/trivy.key
         mode: '0644'
 
     - name: Dearmor Trivy key for apt signed-by
-      shell: gpg --dearmor < /tmp/trivy.key > /usr/share/keyrings/trivy.gpg
+      ansible.builtin.shell: gpg --dearmor < /tmp/trivy.key > /usr/share/keyrings/trivy.gpg
       args:
         creates: /usr/share/keyrings/trivy.gpg
 
     - name: Add Trivy repository with signed-by
-      apt_repository:
+      ansible.builtin.apt_repository:
         # yamllint disable-line rule:line-length
         repo: "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main"
         filename: trivy
         state: present
 
     - name: Install Trivy
-      apt:
+      ansible.builtin.apt:
         name: trivy
         state: present
         update_cache: true

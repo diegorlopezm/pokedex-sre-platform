@@ -1,0 +1,5 @@
+---
+profile: production
+mock_modules:
+  - community.general.zpool
+  - community.general.zfs
