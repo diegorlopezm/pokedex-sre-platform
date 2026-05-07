@@ -1,5 +1,9 @@
 ---
 pool_name: "zdata"
+
+# Using /dev/vdX for KVM/Libvirt portability within Vagrant.
+# This ensures the you can run the lab regardless of your
+# local hardware IDs, as Libvirt maps these deterministically.
 disks:
   - "/dev/vdb"
   - "/dev/vdc"

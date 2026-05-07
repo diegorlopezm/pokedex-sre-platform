@@ -1,7 +1,12 @@
 ---
+- name: Configure GitHub Actions Runner
+  hosts: sre-runner
+  become: true
+  roles:
+    - github_runner
+
 - name: "Configure SRE Storage Node"
-  hosts: sre-storage  
+  hosts: sre-storage
   become: true
   roles:
     - zfs_storage
-  # trigger

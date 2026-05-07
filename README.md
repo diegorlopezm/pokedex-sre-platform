@@ -67,7 +67,7 @@ vagrant up
 | :--- | :--- | :--- | :--- |
 | **sre-runner** | `192.168.56.10` | GitHub Actions|GH Self-Hosted Runner | 1 vCPU / 2GiB |
 | **sre-monitor** | `192.168.56.11` | Observability Stack | 2 vCPU / 4GiB |
-| **sre-storage** | `192.168.56.12` | ZFS & MinIO Engine | 1 vCPU / 2GiB |
+| **sre-storage** | `192.168.56.12` | ZFS & Rustfs (S3) | 1 vCPU / 2GiB |
 | **k3s-master** | `192.168.56.20` | K3s Control Plane | 2 vCPU / 4GiB |
 | **k3s-worker** | `192.168.56.21` | K3s Worker Node | 2 vCPU / 4GiB |
 
@@ -91,12 +91,12 @@ This platform implements advanced operational patterns for high-density data env
 ## Infrastructure Operations & CI/CD
 We operate under a **GitOps** philosophy using **GitHub Actions** with **Self-Hosted Runners** to manage our hybrid cluster (K3s).
 
-### CI/CD Pipeline Strategy 🚧
-The project follows a **"Validate-First"** automation strategy:
+### CI/CD Pipeline Strategy ✅
+The platform implements a **"Validate-First"** automation strategy:
 * **CI (Quality Gates):** * `Ansible-lint`: Validates infrastructure-as-code best practices.
     * `Yamllint`: Ensures strict YAML syntax consistency.
     * `Trivy`: Automated security scanning for vulnerabilities.
-* **CD (Deployment):** Automated via **GitHub Actions Self-Hosted Runners** located inside the private network. This ensures secure deployment without exposing the cluster to the public internet.
+* **CD (Deployment):** Automated via **GitHub Actions Self-Hosted Runners** located inside the private network. This ensures secure deployment without exposing the cluster to the public internet. We use a Self-Provisioning pattern where the sre-runner synchronizes code via rsync and configures the fleet internally.
 * **Smoke Tests:** Post-deployment validation verifies service availability (`HTTP 200 OK`) before marking a build as successful.
 
 ---
@@ -123,7 +123,7 @@ observability:
 data_resilience:
   - PostgreSQL
   - PgBouncer (Connection Pooling)
-  - MinIO (S3-compatible backups)
+  - Rustfs (High-performance Rust-based S3)
 ```
 ---
 ## Application Workload (Pokedex)
@@ -145,13 +145,13 @@ Microservices Architecture
 
     Orchestration: K3s cluster.
 
-## Storage & Persistence Strategy (MinIO)
+## Storage & Persistence Strategy ([Rustfs S3](https://github.com/rustfs/rustfs)) 🚧
 
-We utilize MinIO as an AWS S3-compatible object storage solution, ensuring independence from cloud vendor lock-in.
-
-    Purpose: Automated backup of PostgreSQL database dumps and persistent volumes.
-
-    SRE Impact: Guaranteed data recovery and point-in-time restoration capabilities, managed via automated scripts.
+We have replaced MinIO with **RustFS** to handle our S3-compatible object storage requirements.
+* **Performance-First:** Leveraging Rust's memory safety and zero-cost abstractions, RustFS provides up to 2.3x faster performance for 4KB payloads compared to traditional Go-based solutions.
+* **Architectural Choice:** We use RustFS as a high-speed local buffer for infrastructure backups (PostgreSQL dumps and K3s snapshots) before off-site synchronization.
+* **ZFS Synergy:** By deploying RustFS on top of ZFS, we benefit from native bitrot protection and LZ4 compression, ensuring the integrity of our artifacts.
+* **SRE Impact:** Reduced resource overhead (CPU/RAM) on the storage node, allowing more headroom for ZFS ARC (Adaptive Replacement Cache).
 
 ---
 
@@ -173,6 +173,12 @@ We utilize MinIO as an AWS S3-compatible object storage solution, ensuring indep
 - **Root Cause:** Conflict between `net.bridge.bridge-nf-call-iptables` and host-side Kubernetes rules.
 - **Resolution:** Implemented high-priority iptables bypass via Vagrant Triggers.
 - **[Full Post-Mortem Report](./docs/post-mortems/2026-04-21-network-isolation.md)**
+
+### [Incident] GitHub Runner Path Isolation (Exit Code 127)
+- **Symptom:** Quality Gate jobs failing despite successful infrastructure provisioning.
+- **Root Cause:** Environment PATH mismatch and process-level stale environment.
+- **Resolution:** Implemented internal Self-Provisioning and dynamic service restarts.
+- **[Full Post-Mortem Report](./docs/post-mortems/2026-05-07-runner-path-isolation.md)**
 
 ---
 [Incident Case Study] Silent Data Corruption Recovery:

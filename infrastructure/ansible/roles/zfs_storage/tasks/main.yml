@@ -1,28 +1,28 @@
 ---
 - name: "1. Ensure contrib, non-free and firmware repositories"
-  apt_repository:
+  ansible.builtin.apt_repository:
     repo: "deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware"
     state: present
 
 - name: "2. Update cache and perform dist-upgrade"
-  apt:
+  ansible.builtin.apt:
     upgrade: dist
-    update_cache: yes
+    update_cache: true
 
 - name: "3. Install ZFS utilities and Kernel Headers"
-  apt:
+  ansible.builtin.apt:
     name:
       - zfsutils-linux
       - linux-headers-amd64
     state: present
 
 - name: "4. Check if reboot is required"
-  stat:
+  ansible.builtin.stat:
     path: /var/run/reboot-required
   register: reboot_required_file
 
 - name: "5. Reboot if Kernel has changed"
-  reboot:
+  ansible.builtin.reboot:
     msg: "SRE Alert: Rebooting to apply new Kernel"
   when: reboot_required_file.stat.exists
 
