@@ -1,0 +1,83 @@
+---
+
+services:
+  alloy:
+    image: grafana/alloy:v1.16.1
+    container_name: alloy
+    user: "0:0"
+    ports:
+      - "4317:4317" # OTLP gRPC - tu FastAPI manda aquí
+      - "4318:4318" # OTLP HTTP - para debug con curl
+      - "12345:12345" # Alloy UI y métricas self
+    volumes: -./config.alloy:/etc/alloy/config.alloy - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy /etc/alloy/config.alloy
+    restart: unless-stopped
+    networks: [ monitoring ]
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.143.0
+    container_name: victoriametrics
+    ports:
+      - "8428:8428" # API de queries PromQL
+    volumes:
+      - vmdata:/storage
+    command:
+      - "-storageDataPath=/storage"
+      - "-retentionPeriod=30d" # Guarda 30 días
+      - "-httpListenAddr=:8428"
+    restart: unless-stopped
+    networks: [ monitoring ]
+
+  loki:
+    image: grafana/loki:3.7.2
+    container_name: loki
+    ports:
+      - "3100:3100" # API de logs
+    #command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+    networks: [ monitoring ]
+
+  grafana:
+    image: grafana/grafana:13.0.1-security-01
+    container_name: grafana
+    ports:
+      - "3000:3000" # UI
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_DATASOURCES_DEFAULT: |
+        [
+          {
+            "name":"VictoriaMetrics",
+            "type":"prometheus",
+            "url":"http://victoriametrics:8428",
+            "access":"proxy",
+            "isDefault":true
+          },
+          {
+            "name":"Loki",
+            "type":"loki",
+            "url":"http://loki:3100",
+            "access":"proxy"
+          }
+        ]
+    volumes:
+      - grafanadata:/var/lib/grafana
+    depends_on:
+      - victoriametrics
+      - loki
+    restart: unless-stopped
+    networks: [ monitoring ]
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  vmdata:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=192.168.56.12,rw
+      device: ":/zdata/vm"
+  grafanadata:

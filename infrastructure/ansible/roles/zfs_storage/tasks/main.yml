@@ -41,3 +41,21 @@
     extra_zfs_properties:
       recordsize: 8k
       compression: lz4
+
+- name: "8. Create VM dataset"
+  community.general.zfs:
+    name: "{{ pool_name }}/vm"
+    state: present
+    extra_zfs_properties:
+      recordsize: 128k
+      compression: lz4
+      atime: off
+
+- name: "9. Create Loki dataset"
+  community.general.zfs:
+    name: "{{ pool_name }}/loki"
+    state: present
+    extra_zfs_properties:
+      recordsize: 128k
+      compression: zstd # Mejor ratio para texto
+      atime: off

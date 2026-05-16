@@ -1,0 +1,6 @@
+loki.source.file "system" {
+  targets = [
+    {__path__ = "/var/log/syslog", job = "syslog"},
+  ]
+  forward_to = [loki.write.default.receiver]
+}
