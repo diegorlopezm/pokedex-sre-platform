@@ -4,7 +4,7 @@
 # -------------------------------
 # 0. GLOBAL CONFIGURATION
 # -------------------------------
-
+BOX_IMAGE = "debian/trixie64"   # cámbialo aquí una vez y aplica a todas
 # Virtual datacenter topology definition
 VIRTUAL_DATACENTER = {
   "sre-runner"  => { ip: "192.168.56.10", cpu: 1, mem: 2048 },
@@ -110,7 +110,7 @@ EOF
 # -------------------------------
 
 Vagrant.configure("2") do |config|
-  config.vm.box = "debian/bookworm64"
+  config.vm.box = BOX_IMAGE
 
   # Disable global synced folder for performance
   config.vm.synced_folder ".", "/vagrant", disabled: true
@@ -159,7 +159,7 @@ Vagrant.configure("2") do |config|
       # RUNNER NODE SPECIALIZATION
       # -------------------------------
       if name == "sre-runner"
-        
+
         # SRE PORTABILITY: Mount Ansible code folder using rsync for fast provisioning
         # Mounts 'infrastructure/ansible' from host to '/home/vagrant/ansible-code' in guest
         ANSIBLE_PATH = File.expand_path("../ansible", __dir__)
@@ -196,7 +196,8 @@ Vagrant.configure("2") do |config|
 
             # Install base dependencies
             apt-get update -qq
-            apt-get install -y curl tar ansible > /dev/null
+            apt-get install -y curl tar python3-pip > /dev/null
+            pip3 install --break-system-packages "ansible-core>=2.20,<2.21"
 
             # Setup Ansible control plane
             mkdir -p /home/vagrant/ansible
@@ -214,9 +215,8 @@ EOF
 
             chown -R vagrant:vagrant /home/vagrant/ansible /home/vagrant/.ssh/
 
-            apt-get install -y curl tar ansible > /dev/null
-            
-            sudo -u vagrant ansible-galaxy collection install community.general
+            # Instala TODAS las colecciones desde tu repo
+            sudo -H -u vagrant ansible-galaxy collection install -r /home/vagrant/ansible-code/requirements.yml
 
             # Register GitHub Runner (idempotent)
             if [ "$GITHUB_PAT" != "MISSING_PAT" ] && [ ! -d "$RUNNER_DIR" ]; then
@@ -240,6 +240,9 @@ EOF
 
               chown -R vagrant:vagrant $RUNNER_DIR
 
+              echo "Installing runner dependencies..."
+              sudo ./bin/installdependencies.sh
+
               sudo -u vagrant ./config.sh \
                 --url "$GITHUB_REPO" \
                 --token "$TOKEN" \
@@ -256,15 +259,15 @@ EOF
         node.vm.provision "shell", inline: <<-BASH
           set -e
           echo "==> SRE Self-Provisioning: Running Ansible inside the runner..."
-          
+
           # Use the configuration generated during bootstrap
           export ANSIBLE_CONFIG=/home/vagrant/ansible/ansible.cfg
-          
+
           # Execute the playbook using the mounted code folder
-          sudo -u vagrant ansible-playbook -i /home/vagrant/ansible/hosts.ini \
+          sudo -H -u vagrant ansible-playbook -i /home/vagrant/ansible/hosts.ini \
                            /home/vagrant/ansible-code/site.yml \
                            --limit sre-runner --become
-          
+
           echo "==> Refreshing Runner Service to reload Environment Variables and PATH..."
           # Dynamically find and restart the GitHub runner service
           SERVICE_NAME=$(systemctl list-unit-files | grep actions.runner | awk '{print $1}')

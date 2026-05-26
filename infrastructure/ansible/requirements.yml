@@ -1,0 +1,7 @@
+collections:
+    - name: community.general
+      version: "13.0.1"   # última estable, trae zpool
+    - name: community.docker
+      version: "5.2.0"    # última estable
+    - name: ansible.posix
+      version: "2.2.0"
