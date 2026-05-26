@@ -17,16 +17,16 @@ The platform functions as a testbed for four core SRE pillars. We treat the appl
 | :--- | :--- | :--- |
 | **0. Foundations** | GitOps, CI/CD, Self-Hosted Runners | ✅ STABLE |
 | **1. High-Density Storage** | **ZFS Mirroring, Recordsize tuning (8k) & CI/CD integration.** | ✅ STABLE |
-| **2. Observability** | Unified Telemetry via Grafana Alloy (OTel). | 🚧 In Progress |
-| **3. IaC** | Idempotent infrastructure automation with Ansible. | 🚧 In Progress |
+| **2. Observability** | Platform deployed (Alloy, VictoriaMetrics, Loki, Grafana). Alertmanager, Dashboards & alerting as code pending | 🚧 In Progress |
+| **3. IaC** | Idempotent infrastructure automation with Ansible. | ✅ STABLE |
 | **4. Kernel/Network** | TCP stack tuning and ephemeral port diagnostics. | 📋 Planning |
 | **5. Persistence** | Connection multiplexing with PgBouncer. | 📋 Planning |
-
+**Current sprint:** Grafana dashboards provisioned via Ansible, Loki pipeline for K3s logs, Alertmanager rules for storage latency.
 ---
 ```mermaid
 graph TD
     %% 1. Definición de dirección y salto de línea
-    
+
     subgraph "Management Workstation (My Fedora laptop)"
         A[Terminal - VSCode] -- "vagrant up" --> B[Virtual Datacenter]
         A -- "git push" --> C[GitHub Repository]
@@ -46,7 +46,7 @@ graph TD
 
 ```
 ---
-## Local Lab Setup 
+## Local Lab Setup
 
 This project uses **Vagrant + Libvirt** to create a high-fidelity virtual environment.
 
@@ -55,14 +55,32 @@ This project uses **Vagrant + Libvirt** to create a high-fidelity virtual enviro
 - **Vagrant:** With the `vagrant-libvirt` plugin.
 - **Host Networking:** The `Vagrantfile` includes automated triggers to configure **IP Forwarding** and **Iptables bypass**. This ensures connectivity even if Docker or K3s are running on the host.
 - **SSH Key:** Automatically handled. The Vagrantfile generates `~/.ssh/id_rsa_ansible` if not found.
-
+- **Base OS:** Debian 13 (trixie) — provides Python 3.13 for ansible-core 2.20
 ### Spin up the environment
 ```bash
 # Deployed from the infrastructure directory
 cd infrastructure/vagrant
 vagrant up
 ```
- ### Virtual Machine Inventory 
+### Post-Provisioning (Ansible)
+
+`vagrant up` only bootstraps the VMs and installs Ansible on the runner.
+To configure storage, monitoring, and NFS mounts:
+
+```bash
+# from your host
+vagrant ssh sre-runner
+
+# inside sre-runner
+cd ~/ansible-code
+ansible-playbook -i ../ansible/hosts.ini site.yml --become
+```
+You can also target specific tiers:
+```bash
+ansible-playbook -i ../ansible/hosts.ini site.yml --limit sre-storage --become
+ansible-playbook -i ../ansible/hosts.ini site.yml --limit sre-monitor --become
+```
+ ### Virtual Machine Inventory
 | Node | IP (Static) | Role | Specs (vCPU/RAM) |
 | :--- | :--- | :--- | :--- |
 | **sre-runner** | `192.168.56.10` | GitHub Actions|GH Self-Hosted Runner | 1 vCPU / 2GiB |
@@ -74,7 +92,7 @@ vagrant up
 > [!INFO]- Network Isolation
 > This table defines static addressing within the `192.168.56.0/24` private network. It serves as the **Single Source of Truth** for the [[Ansible]] inventory and the [[Vagrantfile]] configuration.
 ---
-## Identity & Security: 
+## Identity & Security:
 >The entire fleet utilizes a high-entropy Ed25519 mesh. The sre-runner acts as the SSoT (Single Source of Truth) for configuration, ensuring zero manual drift.
 ---
 
@@ -85,7 +103,7 @@ This platform implements advanced operational patterns for high-density data env
 * **Storage Engine (ZFS Integration):** Implementation of mirrored pools with a focus on data integrity. I apply **PostgreSQL-specific optimizations** (`recordsize=8k`) and customized **scrub scheduling** to balance data validation with I/O throughput, avoiding performance degradation during high-traffic windows.
 * **Scalable Encryption:** Architecture designed for native encryption at the dataset level. The design follows a decoupled key management strategy to handle large-scale disk fleets without operational overhead.
 > [!IMPORTANT]
-> **Current Optimization Debt:** > - **Provisioning Time:** ~7 min due to DKMS kernel module compilation during `apt install`. 
+> **Current Optimization Debt:** > - **Provisioning Time:** ~7 min due to DKMS kernel module compilation during `apt install`.
 > - **Future Mitigation:** Implement **Packer** for "Golden Image" baking and **APT-Cacher-NG** to reduce bandwidth and CPU overhead during node scale-up.
 ---
 ## Infrastructure Operations & CI/CD
