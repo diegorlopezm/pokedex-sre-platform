@@ -1,17 +1,30 @@
+---
 - name: Install NFS client
   ansible.builtin.apt:
     name: nfs-common
     state: present
 
-- name: Create mount point
+- name: Crear puntos de montaje
   ansible.builtin.file:
-    path: /mnt/vmdata
+    path: "{{ item }}"
     state: directory
+    mode: '0755'
+  loop:
+        - /mnt/vmdata
+        - /mnt/lokidata
 
-- name: Mount ZFS dataset from sre-storage
+- name: Mount VM data
   ansible.posix.mount:
-    src: "192.168.56.12:/zdata/vm"
+    src: "{{ hostvars['sre-storage']['ansible_host'] }}:/zdata/vm"
     path: /mnt/vmdata
     fstype: nfs
-    opts: rw,sync,hard
+    opts: rw,sync,hard,nofail,_netdev
+    state: mounted
+
+- name: Mount Loki data
+  ansible.posix.mount:
+    src: "{{ hostvars['sre-storage']['ansible_host'] }}:/zdata/loki"
+    path: /mnt/lokidata
+    fstype: nfs
+    opts: rw,async,hard,nofail,_netdev
     state: mounted

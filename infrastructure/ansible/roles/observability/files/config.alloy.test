@@ -1,0 +1,46 @@
+// --- Descubre contenedores vía socket ---
+discovery.docker "local" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// --- Scrape de node_exporter en tus 5 VMs ---
+prometheus.scrape "nodes" {
+  targets = [
+    {__address__ = "192.168.56.10:9100", job = "sre-runner"},
+    {__address__ = "192.168.56.11:9100", job = "sre-monitor"},
+    {__address__ = "192.168.56.12:9100", job = "sre-storage"},
+    {__address__ = "192.168.56.20:9100", job = "k3s-master"},
+    {__address__ = "192.168.56.21:9100", job = "k3s-worker"},
+  ]
+  forward_to = [prometheus.remote_write.vm.receiver]
+}
+
+prometheus.remote_write "vm" {
+  endpoint {
+    url = "http://victoriametrics:8428/api/v1/write"
+  }
+}
+
+// --- Loki writer ---
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// --- Logs del host ---
+loki.source.file "syslog" {
+  targets = [
+    {__path__ = "/var/log/syslog", job = "syslog"},
+    {__path__ = "/var/log/auth.log", job = "auth"},
+  ]
+  forward_to = [loki.write.default.receiver]
+}
+
+// --- Logs de Docker (AHORA con targets) ---
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.docker.local.targets
+  labels     = {}          // requerido, puede ir vacío
+  forward_to = [loki.write.default.receiver]
+}

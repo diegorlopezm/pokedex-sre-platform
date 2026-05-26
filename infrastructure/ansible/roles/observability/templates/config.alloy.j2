@@ -1,6 +1,34 @@
-loki.source.file "system" {
+discovery.docker "local" {
+  host = "unix:///var/run/docker.sock"
+}
+
+prometheus.scrape "nodes" {
+  targets = [
+{% for host in groups['all'] %}
+    {__address__ = "{{ hostvars[host]['ansible_host'] }}:9100", job = "{{ host }}"},
+{% endfor %}
+  ]
+  forward_to = [prometheus.remote_write.vm.receiver]
+}
+
+prometheus.remote_write "vm" {
+  endpoint { url = "http://victoriametrics:8428/api/v1/write" }
+}
+
+loki.write "default" {
+  endpoint { url = "http://loki:3100/loki/api/v1/push" }
+}
+
+loki.source.file "syslog" {
   targets = [
     {__path__ = "/var/log/syslog", job = "syslog"},
+    {__path__ = "/var/log/auth.log", job = "auth"},
   ]
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.source.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+  targets = discovery.docker.local.targets
   forward_to = [loki.write.default.receiver]
 }

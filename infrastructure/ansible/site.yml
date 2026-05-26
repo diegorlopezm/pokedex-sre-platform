@@ -10,3 +10,9 @@
   become: true
   roles:
     - zfs_storage
+
+- name: Configure SRE Monitor
+  hosts: sre-monitor
+  become: true
+  roles:
+    - observability

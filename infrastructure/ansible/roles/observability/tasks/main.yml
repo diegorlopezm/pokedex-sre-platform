@@ -1,0 +1,26 @@
+---
+- name: Crear /opt/monitoring
+  ansible.builtin.file:
+    path: /opt/monitoring
+    state: directory
+    mode: '0755'
+
+- name: Copiar docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/monitoring/docker-compose.yml
+    mode: '0644'
+  notify: Reiniciar monitoring
+
+- name: Renderizar config.alloy desde template
+  ansible.builtin.template:
+    src: config.alloy.j2
+    dest: /opt/monitoring/config.alloy
+    mode: '0644'
+  notify: Reiniciar monitoring
+
+- name: Levantar stack
+  community.docker.docker_compose_v2:
+    project_src: /opt/monitoring
+    state: present
+    pull: missing
