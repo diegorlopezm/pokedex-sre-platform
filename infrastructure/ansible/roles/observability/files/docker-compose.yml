@@ -1,76 +1,97 @@
----
-
 services:
   alloy:
     image: grafana/alloy:v1.16.1
     container_name: alloy
     user: "0:0"
     ports:
-      - "4317:4317" # OTLP gRPC - tu FastAPI manda aquí
-      - "4318:4318" # OTLP HTTP - para debug con curl
-      - "12345:12345" # Alloy UI y métricas self
+      - "4317:4317"
+      - "4318:4318"
+      - "12345:12345"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/log:/var/log:ro
       - ./config.alloy:/etc/alloy/config.alloy
     command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy /etc/alloy/config.alloy
     restart: unless-stopped
-    networks: [ monitoring ]
+    networks:
+      - monitoring
 
   victoriametrics:
-    image: victoriametrics/victoria-metrics:v1.143.0
+    image: victoriametrics/victoria-metrics:v1.144.0
     container_name: victoriametrics
     ports:
-      - "8428:8428" # API de queries PromQL
+      - "8428:8428"
     volumes:
       - vmdata:/storage
     command:
       - "-storageDataPath=/storage"
-      - "-retentionPeriod=30d" # Guarda 30 días
+      - "-retentionPeriod=30d"
       - "-httpListenAddr=:8428"
     restart: unless-stopped
-    networks: [ monitoring ]
+    networks:
+      - monitoring
+
+  vmalert:
+    image: victoriametrics/vmalert:v1.144.0
+    container_name: vmalert
+    ports:
+      - "8880:8880"
+    volumes:
+      - ./alerts.yml:/etc/alerts.yml:ro
+    command:
+      - "-datasource.url=http://victoriametrics:8428"
+      - "-notifier.url=http://alertmanager:9093"
+      - "-rule=/etc/alerts.yml"
+      - "-evaluationInterval=30s"
+    restart: unless-stopped
+    networks:
+      - monitoring
+    depends_on:
+      - victoriametrics
+
+  alertmanager:
+    image: prom/alertmanager:v0.32.1
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - amdata:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    restart: unless-stopped
+    networks:
+      - monitoring
 
   loki:
     image: grafana/loki:3.7.2
     container_name: loki
     ports:
-      - "3100:3100" # API de logs
-    #command: -config.file=/etc/loki/local-config.yaml
+      - "3100:3100"
+    volumes:
+      - lokidata:/loki
+    command: -config.file=/etc/loki/local-config.yaml
     restart: unless-stopped
-    networks: [ monitoring ]
+    networks:
+      - monitoring
 
   grafana:
     image: grafana/grafana:13.0.1-security-01
     container_name: grafana
     ports:
-      - "3000:3000" # UI
+      - "3000:3000"
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
-      GF_DATASOURCES_DEFAULT: |
-        [
-          {
-            "name":"VictoriaMetrics",
-            "type":"prometheus",
-            "url":"http://victoriametrics:8428",
-            "access":"proxy",
-            "isDefault":true
-          },
-          {
-            "name":"Loki",
-            "type":"loki",
-            "url":"http://loki:3100",
-            "access":"proxy"
-          }
-        ]
     volumes:
       - grafanadata:/var/lib/grafana
     depends_on:
       - victoriametrics
       - loki
     restart: unless-stopped
-    networks: [ monitoring ]
+    networks:
+      - monitoring
 
 networks:
   monitoring:
@@ -90,3 +111,14 @@ volumes:
       o: bind
       device: /mnt/lokidata
   grafanadata:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/vmdata/grafana
+  amdata:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/vmdata/alertmanager

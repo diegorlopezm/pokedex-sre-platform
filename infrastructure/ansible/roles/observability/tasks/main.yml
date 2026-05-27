@@ -12,6 +12,18 @@
     mode: '0644'
   notify: Reiniciar monitoring
 
+- name: Copiar alerts.yml
+  ansible.builtin.copy:
+    src: alerts.yml
+    dest: /opt/monitoring/alerts.yml
+    mode: '0644'
+
+- name: Copiar alertmanager.yml
+  ansible.builtin.copy:
+    src: alertmanager.yml
+    dest: /opt/monitoring/alertmanager.yml
+    mode: '0644'
+
 - name: Renderizar config.alloy desde template
   ansible.builtin.template:
     src: config.alloy.j2

@@ -1,0 +1,19 @@
+groups:
+    - name: platform
+      interval: 30s
+      rules:
+        - alert: InstanceDown
+          expr: up == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Instance {{ $labels.instance }} down"
+
+        - alert: ZFSPoolDegraded
+          expr: node_zfs_zpool_state!= 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ZFS pool degraded"

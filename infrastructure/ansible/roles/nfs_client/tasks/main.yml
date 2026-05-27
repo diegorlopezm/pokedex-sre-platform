@@ -4,21 +4,20 @@
     name: nfs-common
     state: present
 
-- name: Crear puntos de montaje
+- name: Create mount points
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
-    mode: '0755'
   loop:
         - /mnt/vmdata
         - /mnt/lokidata
 
-- name: Mount VM data
+- name: Mount VM
   ansible.posix.mount:
     src: "{{ hostvars['sre-storage']['ansible_host'] }}:/zdata/vm"
     path: /mnt/vmdata
     fstype: nfs
-    opts: rw,sync,hard,nofail,_netdev
+    opts: rw,sync,hard
     state: mounted
 
 - name: Mount Loki data
@@ -26,5 +25,16 @@
     src: "{{ hostvars['sre-storage']['ansible_host'] }}:/zdata/loki"
     path: /mnt/lokidata
     fstype: nfs
-    opts: rw,async,hard,nofail,_netdev
+    opts: rw,async,hard
     state: mounted
+
+- name: Crear subdirectorios para volúmenes Docker
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - /mnt/vmdata/alertmanager
+    - /mnt/vmdata/grafana
